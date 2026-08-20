@@ -53,6 +53,18 @@ For one-off use without changing the shell profile:
 ./scripts/claude-apim.sh
 ```
 
+## Automatic Claude Code Setup
+
+`./scripts/configure-claude.sh` makes plain `claude` use Foundry through APIM automatically:
+
+1. Writes a small launcher to `~/.config/claudecodepoc/claude.sh`.
+2. Sources it from `~/.bashrc` or `~/.zshrc`.
+3. Routes `claude` to `scripts/claude-apim.sh`.
+4. On every launch, fetches the APIM subscription key from Azure without saving it.
+5. Sets Foundry mode, the APIM base URL, skipped local Foundry auth, the APIM key header, and model deployment aliases.
+
+Result: after one shell reload, users run normal `claude`; all model traffic goes Claude Code → APIM → Foundry.
+
 ## Greenfield Configuration
 
 Greenfield requires globally unique Foundry/APIM names and accurate Marketplace attestation values:
