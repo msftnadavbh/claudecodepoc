@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+set -o pipefail
+
+if [[ -z "${AZURE_CLI_PYTHON:-}" ]]; then
+  if [[ -n "${AZURE_CLI_NATIVE:-}" && -x "$AZURE_CLI_NATIVE" ]]; then
+    exec "$AZURE_CLI_NATIVE" "$@"
+  fi
+  for candidate in /opt/homebrew/bin/az /usr/local/bin/az /usr/bin/az; do
+    if [[ -x "$candidate" ]]; then
+      exec "$candidate" "$@"
+    fi
+  done
+  printf 'ERROR: Azure CLI is not installed.\n' >&2
+  exit 127
+fi
+
+export WSLENV="AZURE_CONFIG_DIR/p:AZURE_CORE_COLLECT_TELEMETRY${WSLENV:+:${WSLENV}}"
+"$AZURE_CLI_PYTHON" -IBm azure.cli "$@" | tr -d '\r'

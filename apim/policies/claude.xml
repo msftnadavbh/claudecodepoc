@@ -1,0 +1,32 @@
+<policies>
+    <inbound>
+        <base />
+        <set-header name="Ocp-Apim-Subscription-Key" exists-action="delete" />
+        <set-header name="x-api-key" exists-action="delete" />
+        <set-header name="Authorization" exists-action="delete" />
+        <authentication-managed-identity resource="https://ai.azure.com" output-token-variable-name="foundry-token" ignore-error="false" />
+        <set-header name="Authorization" exists-action="override">
+            <value>@("Bearer " + (string)context.Variables["foundry-token"])</value>
+        </set-header>
+        <set-backend-service backend-id="foundry-claude" />
+        {{TOKEN_LIMIT_POLICY}}
+        {{TOKEN_METRIC_POLICY}}
+        <trace source="claude-code-correlation" severity="information">
+            <message>Claude Code gateway request</message>
+            <metadata name="model" value="{{CLAUDE_DEPLOYMENT_NAME}}" />
+            <metadata name="subscription" value="@(context.Subscription.Id)" />
+            <metadata name="sessionId" value="@(context.Request.Headers.GetValueOrDefault(&quot;X-Claude-Code-Session-Id&quot;, &quot;none&quot;))" />
+            <metadata name="agentId" value="@(context.Request.Headers.GetValueOrDefault(&quot;X-Claude-Code-Agent-Id&quot;, &quot;none&quot;))" />
+            <metadata name="parentAgentId" value="@(context.Request.Headers.GetValueOrDefault(&quot;X-Claude-Code-Parent-Agent-Id&quot;, &quot;none&quot;))" />
+        </trace>
+    </inbound>
+    <backend>
+        <forward-request timeout="300" fail-on-error-status-code="false" buffer-response="false" />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

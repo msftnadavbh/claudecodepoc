@@ -1,0 +1,19 @@
+# Local Azure target and generated runtime configuration
+.env*
+!.env.azure.example
+.azure/
+
+# Local Claude Code state
+.claude-runtime/
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Local deployment parameters and evidence
+infra/parameters/*.bicepparam
+!infra/parameters/example.bicepparam
+
+# Python and OS artifacts
+__pycache__/
+*.py[cod]
+.DS_Store
+*.log
