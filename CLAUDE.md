@@ -4,7 +4,7 @@
 
 - Preserve native Anthropic Messages and SSE end to end.
 - Do not translate requests or responses to OpenAI formats.
-- Treat the configured Foundry account, project, and Claude deployment as read-only existing resources.
+- Greenfield creates all resources; brownfield treats the configured Foundry account, project, and Claude deployment as read-only existing resources.
 - APIM authenticates to Foundry with its system-assigned managed identity.
 - Never log request/response bodies or source code.
 
@@ -20,8 +20,9 @@
 
 - Login: `./scripts/login-azure.sh`
 - Verify Foundry: `./scripts/discover-foundry.sh`
+- Register providers: `./scripts/register-providers.sh`
 - Preview IaC: `./scripts/validate-infra.sh --gateway`
-- Deploy gateway: `./scripts/deploy-apim.sh`
+- Deploy solution: `./scripts/deploy.sh`
 - Configure Bash/Zsh: `./scripts/configure-claude.sh`
 - Run Claude through APIM: `./scripts/claude-apim.sh`
 - Demo tests: `python3 -m unittest discover -s tests -v` from `demo-repo/`

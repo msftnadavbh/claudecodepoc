@@ -1,6 +1,6 @@
 # Claude Code on Microsoft Foundry through Azure API Management
 
-This repository configures Azure API Management (APIM) as a secure gateway between local Claude Code and an existing Claude model deployment in Microsoft Foundry.
+This repository deploys Claude on Microsoft Foundry behind Azure API Management (APIM), then configures local Claude Code to use the gateway.
 
 ```text
 Claude Code
@@ -12,7 +12,48 @@ Claude Code
 
 The gateway preserves the native Anthropic Messages contract. It does not translate requests to OpenAI formats.
 
-## What It Deploys
+## Deployment Modes
+
+### Greenfield (Default)
+
+Greenfield starts with an otherwise empty subscription and creates:
+
+- A resource group.
+- A Microsoft Foundry AIServices account and project.
+- One selected Claude model deployment.
+- APIM Standard v2 with a system-assigned managed identity.
+- Native `POST /v1/messages` and `POST /v1/messages/count_tokens` routes.
+- Log Analytics and Application Insights with zero-byte body logging.
+- Resource-scoped APIM RBAC and an APIM subscription for local Claude Code.
+
+### Brownfield
+
+Brownfield reuses an existing resource group, Foundry account, project, and Claude deployment. Bicep treats those resources as external and creates or updates only APIM, observability, API configuration, and APIM RBAC.
+
+Set `DEPLOYMENT_MODE=brownfield` and provide the exact existing names in `.env.azure.local`.
+
+## Model Selection
+
+Set `CLAUDE_MODEL_FAMILY` to one of:
+
+| Family | Default Hosted-on-Azure model | Default version |
+|--------|-------------------------------|-----------------|
+| `opus` | `claude-opus-5` | `2` |
+| `sonnet` | `claude-sonnet-5` | `2` |
+| `haiku` | `claude-haiku-4-5` | `2` |
+
+Greenfield defaults to Sonnet with 25K TPM. Override `CLAUDE_MODEL_NAME`, `CLAUDE_MODEL_VERSION`, `CLAUDE_MODEL_CAPACITY`, or `CLAUDE_DEPLOYMENT_NAME` when needed.
+
+Before validation or deployment, `scripts/preflight-model.sh` checks:
+
+- The exact model/version appears in the live regional catalog with `hostedOn=azure`.
+- The subscription exposes the Hosted-on-Azure quota row `AIServices.GlobalStandard.<model>.Azure`.
+- Available quota is at least the requested capacity.
+- The greenfield target resource group does not already exist.
+
+Brownfield validates the live catalog and the existing deployment but does not require unused quota for capacity already allocated.
+
+## What The Gateway Deploys
 
 - APIM Standard v2 with a system-assigned managed identity.
 - Native `POST /v1/messages` and `POST /v1/messages/count_tokens` routes.
@@ -21,12 +62,12 @@ The gateway preserves the native Anthropic Messages contract. It does not transl
 - Log Analytics and Application Insights with zero-byte request and response body logging.
 - An APIM subscription used by local Claude Code.
 
-The repository does **not** create or update the Foundry account, Foundry project, or Claude model deployment. Those are existing resources referenced by Bicep.
+In greenfield these gateway resources are deployed with the new Foundry resources. In brownfield only the gateway side is managed by this repository.
 
 ## Prerequisites
 
-- An existing Microsoft Foundry account and project.
-- A deployed Claude model that supports the Anthropic Messages API.
+- Greenfield: an Azure subscription eligible for Anthropic Claude through Azure Marketplace.
+- Brownfield: an existing Microsoft Foundry account, project, and deployed Claude model.
 - Owner or equivalent deployment and role-assignment permissions on the target scope.
 - Azure CLI, `jq`, `curl`, Git, and Python 3.
 - Claude Code installed with Anthropic's native installer or Homebrew.
@@ -49,7 +90,15 @@ Create the ignored local configuration:
 cp .env.azure.example .env.azure.local
 ```
 
-Edit `.env.azure.local` with your tenant, subscription, existing Foundry resource names, Claude deployment, globally unique APIM name, and publisher details.
+Edit `.env.azure.local` with your tenant, subscription, resource names, model choice, globally unique APIM name, and publisher details.
+
+For greenfield, also provide accurate Marketplace attestation values:
+
+- `CLAUDE_ORGANIZATION_NAME`: legal organization name.
+- `CLAUDE_COUNTRY_CODE`: two-letter country code.
+- `CLAUDE_INDUSTRY`: one of the values listed in `.env.azure.example`.
+
+Deploying greenfield sends these values as `modelProviderData` and accepts the Anthropic Marketplace terms on the represented organization's behalf. Review the linked terms before deployment; do not use placeholder values.
 
 The required values are documented in `.env.azure.example`. No Azure target identifiers or credentials need to be committed.
 
@@ -79,14 +128,16 @@ brew install azure-cli
 
 macOS uses the native Azure CLI and an ignored repository-local cache. If your organization requires a broker or compliant-device flow, follow its approved macOS Company Portal and Azure CLI authentication policy.
 
-## Verify Existing Foundry Resources
+## Preflight
 
 ```bash
 ./scripts/check-prereqs.sh
+./scripts/register-providers.sh
+./scripts/preflight-model.sh
 ./scripts/discover-foundry.sh
 ```
 
-Discovery fails unless the configured resource group, Foundry account, project, deployment, model name, model version, and region match live Azure state.
+In greenfield, discovery prints the resources that will be created. In brownfield, it fails unless configured names and model metadata match live Azure state.
 
 ## Deploy The Gateway
 
@@ -96,15 +147,15 @@ Preview the exact changes:
 ./scripts/validate-infra.sh --gateway
 ```
 
-Review the what-if output. The existing Foundry resources should appear as ignored references, never updates or deletions.
+Review the what-if output. Greenfield should show resource-group, Foundry, model, gateway, and observability creates. Brownfield should show existing Foundry resources as ignored references, never updates or deletions.
 
 Deploy:
 
 ```bash
-./scripts/deploy-apim.sh
+./scripts/deploy.sh
 ```
 
-The deployment is incremental and scoped to the configured resource group. It may register the `Microsoft.ApiManagement`, `Microsoft.Insights`, and `Microsoft.OperationalInsights` resource providers.
+The deployment is incremental. It may register the `Microsoft.CognitiveServices`, `Microsoft.ApiManagement`, `Microsoft.Insights`, and `Microsoft.OperationalInsights` resource providers.
 
 ## Configure Local Claude Code Automatically
 
@@ -138,9 +189,11 @@ brew install azure-cli jq
 cp .env.azure.example .env.azure.local
 # Edit .env.azure.local
 ./scripts/login-azure.sh
+./scripts/register-providers.sh
+./scripts/preflight-model.sh
 ./scripts/discover-foundry.sh
 ./scripts/validate-infra.sh --gateway
-./scripts/deploy-apim.sh
+./scripts/deploy.sh
 ./scripts/configure-claude.sh
 source ~/.zshrc
 claude
@@ -200,10 +253,12 @@ Run the deterministic coding-agent smoke test:
 |------|---------|
 | Authenticate isolated Azure CLI | `./scripts/login-azure.sh` |
 | Check prerequisites and context | `./scripts/check-prereqs.sh` |
-| Verify Foundry target | `./scripts/discover-foundry.sh` |
+| Register required Azure providers | `./scripts/register-providers.sh` |
+| Check model catalog and quota | `./scripts/preflight-model.sh` |
+| Preview resources or verify brownfield target | `./scripts/discover-foundry.sh` |
 | Refresh generated non-secret values | `./scripts/write-generated-env.sh` |
 | Preview gateway changes | `./scripts/validate-infra.sh --gateway` |
-| Deploy or update the gateway | `./scripts/deploy-apim.sh` |
+| Deploy greenfield or update brownfield | `./scripts/deploy.sh` |
 | Configure plain `claude` | `./scripts/configure-claude.sh` |
 | Run Claude Code through APIM | `./scripts/claude-apim.sh` |
 | Confirm the intentionally failing demo fixture | `cd demo-repo && python3 -m unittest discover -s tests -v` |
@@ -214,7 +269,7 @@ Run the deterministic coding-agent smoke test:
 - Never print or persist APIM keys, Azure tokens, API keys, or bearer tokens.
 - Request and response bodies are not logged by APIM diagnostics.
 - APIM receives only resource-scoped data-plane roles.
-- The Foundry account, project, and model deployment remain unmanaged existing resources.
+- Brownfield Foundry account, project, and model deployment remain unmanaged existing resources.
 - The API accepts native Anthropic Messages and preserves upstream headers, streaming, and errors.
 
 For restricted egress, source `scripts/activate-apim-restricted.sh`. It disables nonessential Claude Code traffic; WebFetch domain checks require separate handling.
@@ -226,6 +281,9 @@ For restricted egress, source `scripts/activate-apim-restricted.sh`. It disables
 - [Anthropic: gateway protocol reference](https://code.claude.com/docs/en/llm-gateway-protocol)
 - [Microsoft Learn: configure Claude Code for Microsoft Foundry](https://learn.microsoft.com/azure/foundry/foundry-models/how-to/configure-claude-code)
 - [Microsoft Learn: Claude models in Microsoft Foundry](https://learn.microsoft.com/azure/foundry/foundry-models/concepts/claude-models)
+- [Microsoft Learn: deploy Claude with Bicep or Terraform](https://learn.microsoft.com/azure/developer/ai/how-to/deploy-claude-foundry)
 - [Microsoft Learn: APIM generative AI gateway capabilities](https://learn.microsoft.com/azure/api-management/genai-gateway-capabilities)
 
 The implementation was checked against Anthropic documentation through Context7 and against current Microsoft Learn guidance.
+
+Greenfield deployment accepts the applicable Marketplace terms through `modelProviderData`. Review [Anthropic Commercial Terms](https://www.anthropic.com/legal/commercial-terms), [Anthropic Usage Policy](https://www.anthropic.com/legal/aup), [Anthropic Supported Regions Policy](https://aka.ms/supported_anthropic_regions), and [Microsoft Product Terms](https://www.microsoft.com/licensing/terms/) before deploying.

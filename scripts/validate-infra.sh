@@ -14,6 +14,7 @@ elif [[ $# -gt 0 ]]; then
   exit 2
 fi
 
+"${SCRIPT_DIR}/preflight-model.sh"
 "${SCRIPT_DIR}/discover-foundry.sh"
 
 az deployment sub validate \

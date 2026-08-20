@@ -1,5 +1,10 @@
 targetScope = 'subscription'
 
+@allowed([
+  'greenfield'
+  'brownfield'
+])
+param deploymentMode string = 'greenfield'
 param location string
 param resourceGroupName string
 param foundryName string
@@ -7,6 +12,10 @@ param foundryProjectName string
 param claudeDeploymentName string
 param expectedClaudeModelName string
 param expectedClaudeModelVersion string
+param claudeModelCapacity int
+param claudeOrganizationName string = ''
+param claudeCountryCode string = ''
+param claudeIndustry string = ''
 param apimName string
 param workspaceName string
 param appInsightsName string
@@ -26,40 +35,52 @@ var tags = {
   managedBy: 'bicep'
   repository: 'claudecodepoc'
 }
+var greenfield = deploymentMode == 'greenfield'
 
-resource targetResourceGroup 'Microsoft.Resources/resourceGroups@2025-04-01' existing = {
+resource targetResourceGroup 'Microsoft.Resources/resourceGroups@2025-04-01' = if (greenfield) {
   name: resourceGroupName
+  location: location
+  tags: tags
 }
 
-resource foundry 'Microsoft.CognitiveServices/accounts@2026-05-01' existing = {
-  scope: targetResourceGroup
-  name: foundryName
-}
-
-resource foundryProject 'Microsoft.CognitiveServices/accounts/projects@2026-05-01' existing = {
-  parent: foundry
-  name: foundryProjectName
-}
-
-resource claudeDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-10-01-preview' existing = {
-  parent: foundry
-  name: claudeDeploymentName
+module foundry 'modules/foundry.bicep' = if (greenfield) {
+  name: 'foundry-and-claude'
+  scope: resourceGroup(resourceGroupName)
+  params: {
+    location: location
+    tags: tags
+    foundryName: foundryName
+    projectName: foundryProjectName
+    deploymentName: claudeDeploymentName
+    modelName: expectedClaudeModelName
+    modelVersion: expectedClaudeModelVersion
+    modelCapacity: claudeModelCapacity
+    claudeOrganizationName: claudeOrganizationName
+    claudeCountryCode: claudeCountryCode
+    claudeIndustry: claudeIndustry
+  }
+  dependsOn: [
+    targetResourceGroup
+  ]
 }
 
 module observability 'modules/observability.bicep' = if (deployGateway) {
   name: 'gateway-observability'
-  scope: targetResourceGroup
+  scope: resourceGroup(resourceGroupName)
   params: {
     location: location
     tags: tags
     workspaceName: workspaceName
     appInsightsName: appInsightsName
   }
+  dependsOn: [
+    targetResourceGroup
+  ]
 }
 
 module apim 'modules/apim.bicep' = if (deployGateway) {
   name: 'apim-service'
-  scope: targetResourceGroup
+  scope: resourceGroup(resourceGroupName)
   params: {
     location: location
     tags: tags
@@ -67,11 +88,14 @@ module apim 'modules/apim.bicep' = if (deployGateway) {
     publisherName: publisherName
     publisherEmail: publisherEmail
   }
+  dependsOn: [
+    targetResourceGroup
+  ]
 }
 
 module gatewayRbac 'modules/rbac.bicep' = if (deployGateway) {
   name: 'gateway-rbac'
-  scope: targetResourceGroup
+  scope: resourceGroup(resourceGroupName)
   params: {
     foundryName: foundryName
     appInsightsName: appInsightsName
@@ -79,12 +103,13 @@ module gatewayRbac 'modules/rbac.bicep' = if (deployGateway) {
   }
   dependsOn: [
     observability
+    foundry
   ]
 }
 
 module claudeApi 'modules/claude-api.bicep' = if (deployGateway) {
   name: 'claude-api'
-  scope: targetResourceGroup
+  scope: resourceGroup(resourceGroupName)
   params: {
     apimName: apimName
     foundryName: foundryName
@@ -101,13 +126,13 @@ module claudeApi 'modules/claude-api.bicep' = if (deployGateway) {
   ]
 }
 
-output resourceGroupName string = targetResourceGroup.name
-output foundryResourceName string = foundry.name
-output foundryResourceId string = foundry.id
-output foundryBaseUrl string = 'https://${foundry.name}.services.ai.azure.com/anthropic'
-output foundryProjectName string = foundryProject.name
-output foundryProjectEndpoint string = 'https://${foundry.name}.services.ai.azure.com/api/projects/${foundryProject.name}'
-output claudeDeploymentName string = claudeDeployment.name
+output resourceGroupName string = resourceGroupName
+output foundryResourceName string = foundryName
+output foundryResourceId string = resourceId(resourceGroupName, 'Microsoft.CognitiveServices/accounts', foundryName)
+output foundryBaseUrl string = 'https://${foundryName}.services.ai.azure.com/anthropic'
+output foundryProjectName string = foundryProjectName
+output foundryProjectEndpoint string = 'https://${foundryName}.services.ai.azure.com/api/projects/${foundryProjectName}'
+output claudeDeploymentName string = claudeDeploymentName
 output claudeModelName string = expectedClaudeModelName
 output claudeModelVersion string = expectedClaudeModelVersion
 output apimResourceName string = deployGateway ? apim!.outputs.apimName : ''

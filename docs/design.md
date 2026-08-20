@@ -2,7 +2,13 @@
 
 ## Scope
 
-This repository adds an APIM gateway in front of an existing Claude deployment in Microsoft Foundry. It intentionally does not provision the model plane.
+Greenfield creates the complete Foundry model plane and APIM gateway. Brownfield references an existing Foundry model plane and manages only the gateway side.
+
+## Modes
+
+`DEPLOYMENT_MODE=greenfield` creates the resource group, AIServices account, project, one Claude deployment, APIM, observability, and RBAC. `DEPLOYMENT_MODE=brownfield` keeps Foundry resources external and read-only.
+
+Greenfield model deployment uses Global Standard, exact model version pinning, and required `modelProviderData` Marketplace attestation. Preflight checks the live Hosted-on-Azure catalog and `.Azure` quota ledger before ARM validation.
 
 ## Protocol
 
@@ -42,7 +48,7 @@ APIM diagnostics use Application Insights with zero body bytes. Safe metadata in
 
 ## Local State
 
-The public repository contains only examples. Actual tenant, subscription, resource names, deployment evidence, Azure CLI caches, Claude state, and generated environment files are ignored so operators retain them locally without publishing them.
+The public repository contains only examples. Actual tenant, subscription, resource names, attestation values, deployment evidence, Azure CLI caches, Claude state, and generated environment files are ignored so operators retain them locally without publishing them.
 
 ## Sources
 
@@ -50,4 +56,5 @@ The public repository contains only examples. Actual tenant, subscription, resou
 - [Anthropic LLM gateway connection](https://code.claude.com/docs/en/llm-gateway-connect)
 - [Anthropic gateway protocol](https://code.claude.com/docs/en/llm-gateway-protocol)
 - [Microsoft Learn Claude Code configuration](https://learn.microsoft.com/azure/foundry/foundry-models/how-to/configure-claude-code)
+- [Microsoft Learn Claude Bicep deployment](https://learn.microsoft.com/azure/developer/ai/how-to/deploy-claude-foundry)
 - [Microsoft Learn APIM GenAI gateway](https://learn.microsoft.com/azure/api-management/genai-gateway-capabilities)

@@ -8,6 +8,18 @@ source "${SCRIPT_DIR}/azure-context.sh"
 printf 'Locked subscription: %s\n' "$AZURE_SUBSCRIPTION_ID"
 printf 'Target region:       %s\n' "$AZURE_LOCATION"
 
+if [[ "$DEPLOYMENT_MODE" == greenfield && "$(az group exists --name "$FOUNDRY_RESOURCE_GROUP" --subscription "$AZURE_SUBSCRIPTION_ID")" != true ]]; then
+  printf 'Deployment mode:     greenfield\n'
+  printf 'Resource group:      %s (will be created)\n' "$FOUNDRY_RESOURCE_GROUP"
+  printf 'Foundry resource:    %s (will be created)\n' "$FOUNDRY_RESOURCE_NAME"
+  printf 'Foundry project:     %s (will be created)\n' "$FOUNDRY_PROJECT_NAME"
+  printf 'Claude deployment:   %s (%s v%s, %dK TPM; will be created)\n' \
+    "$CLAUDE_DEPLOYMENT_NAME" "$CLAUDE_MODEL_NAME" "$CLAUDE_MODEL_VERSION" "$CLAUDE_MODEL_CAPACITY"
+  exit 0
+fi
+
+printf 'Deployment mode:     %s (deployed resources)\n' "$DEPLOYMENT_MODE"
+
 rg="$(az group show \
   --name "$FOUNDRY_RESOURCE_GROUP" \
   --subscription "$AZURE_SUBSCRIPTION_ID" \

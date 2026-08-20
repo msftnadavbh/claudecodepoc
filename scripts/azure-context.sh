@@ -12,10 +12,30 @@ set -a
 source "$AZURE_ENV_FILE"
 set +a
 
+DEPLOYMENT_MODE="${DEPLOYMENT_MODE:-greenfield}"
+CLAUDE_MODEL_FAMILY="${CLAUDE_MODEL_FAMILY:-sonnet}"
+case "$CLAUDE_MODEL_FAMILY" in
+  opus) default_model='claude-opus-5' ;;
+  sonnet) default_model='claude-sonnet-5' ;;
+  haiku) default_model='claude-haiku-4-5' ;;
+  *)
+    printf 'ERROR: CLAUDE_MODEL_FAMILY must be opus, sonnet, or haiku.\n' >&2
+    return 1 2>/dev/null || exit 1
+    ;;
+esac
+CLAUDE_MODEL_NAME="${CLAUDE_MODEL_NAME:-$default_model}"
+CLAUDE_MODEL_VERSION="${CLAUDE_MODEL_VERSION:-2}"
+CLAUDE_MODEL_CAPACITY="${CLAUDE_MODEL_CAPACITY:-25}"
+CLAUDE_DEPLOYMENT_NAME="${CLAUDE_DEPLOYMENT_NAME:-$CLAUDE_MODEL_NAME}"
+CLAUDE_ORGANIZATION_NAME="${CLAUDE_ORGANIZATION_NAME:-}"
+CLAUDE_COUNTRY_CODE="${CLAUDE_COUNTRY_CODE:-}"
+CLAUDE_INDUSTRY="${CLAUDE_INDUSTRY:-}"
+
 required=(
   AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID AZURE_LOCATION
   FOUNDRY_RESOURCE_GROUP FOUNDRY_RESOURCE_NAME FOUNDRY_PROJECT_NAME
-  CLAUDE_DEPLOYMENT_NAME CLAUDE_MODEL_NAME CLAUDE_MODEL_VERSION
+  DEPLOYMENT_MODE CLAUDE_MODEL_FAMILY CLAUDE_DEPLOYMENT_NAME
+  CLAUDE_MODEL_NAME CLAUDE_MODEL_VERSION CLAUDE_MODEL_CAPACITY
   APIM_RESOURCE_NAME APIM_SUBSCRIPTION_NAME
   LOG_ANALYTICS_WORKSPACE_NAME APP_INSIGHTS_NAME
   PUBLISHER_NAME PUBLISHER_EMAIL
@@ -26,6 +46,29 @@ for name in "${required[@]}"; do
     return 1 2>/dev/null || exit 1
   fi
 done
+
+if [[ "$DEPLOYMENT_MODE" != greenfield && "$DEPLOYMENT_MODE" != brownfield ]]; then
+  printf 'ERROR: DEPLOYMENT_MODE must be greenfield or brownfield.\n' >&2
+  return 1 2>/dev/null || exit 1
+fi
+if [[ ! "$CLAUDE_MODEL_CAPACITY" =~ ^[1-9][0-9]*$ ]]; then
+  printf 'ERROR: CLAUDE_MODEL_CAPACITY must be a positive integer in thousands of TPM.\n' >&2
+  return 1 2>/dev/null || exit 1
+fi
+if [[ "$DEPLOYMENT_MODE" == greenfield ]]; then
+  if [[ -z "$CLAUDE_ORGANIZATION_NAME" || "$CLAUDE_ORGANIZATION_NAME" == 'Your legal organization name' ||
+        ! "$CLAUDE_COUNTRY_CODE" =~ ^[A-Za-z]{2}$ ]]; then
+    printf 'ERROR: Greenfield requires CLAUDE_ORGANIZATION_NAME and a two-letter CLAUDE_COUNTRY_CODE.\n' >&2
+    return 1 2>/dev/null || exit 1
+  fi
+  case "$CLAUDE_INDUSTRY" in
+    technology|finance|healthcare|education|retail|manufacturing|government|media|other) ;;
+    *)
+      printf 'ERROR: Greenfield CLAUDE_INDUSTRY is invalid; see .env.azure.example.\n' >&2
+      return 1 2>/dev/null || exit 1
+      ;;
+  esac
+fi
 
 uuid='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
 if [[ ! "$AZURE_TENANT_ID" =~ $uuid || ! "$AZURE_SUBSCRIPTION_ID" =~ $uuid ||
@@ -68,4 +111,4 @@ case ":${PATH}:" in
   *) export PATH="${REPO_ROOT}/scripts:${PATH}" ;;
 esac
 
-unset required name uuid
+unset required name uuid default_model

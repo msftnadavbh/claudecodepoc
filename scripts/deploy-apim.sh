@@ -2,25 +2,10 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-"${SCRIPT_DIR}/assert-azure-context.sh"
 source "${SCRIPT_DIR}/azure-context.sh"
 source "${SCRIPT_DIR}/bicep-parameters.sh"
 
-"${SCRIPT_DIR}/discover-foundry.sh"
-
-for provider in Microsoft.ApiManagement Microsoft.Insights Microsoft.OperationalInsights; do
-  registration="$(az provider show \
-    --namespace "$provider" \
-    --subscription "$AZURE_SUBSCRIPTION_ID" \
-    --query registrationState --output tsv)"
-  if [[ "$registration" != 'Registered' ]]; then
-    az provider register \
-      --namespace "$provider" \
-      --wait \
-      --subscription "$AZURE_SUBSCRIPTION_ID"
-  fi
-done
-
+"${SCRIPT_DIR}/register-providers.sh"
 "${SCRIPT_DIR}/validate-infra.sh" --gateway
 
 az deployment sub create \
@@ -33,6 +18,7 @@ az deployment sub create \
   --output none
 
 "${SCRIPT_DIR}/write-generated-env.sh"
+"${SCRIPT_DIR}/discover-foundry.sh"
 
 az apim show \
   --name "$APIM_RESOURCE_NAME" \

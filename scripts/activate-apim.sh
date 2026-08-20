@@ -5,7 +5,7 @@ source "${_script_dir}/azure-context.sh"
 "${_script_dir}/assert-azure-context.sh" || return 1
 
 if [[ ! -f "${REPO_ROOT}/.env.azure.generated" ]]; then
-  printf 'ERROR: Run scripts/deploy-apim.sh first.\n' >&2
+  printf 'ERROR: Run scripts/deploy.sh first.\n' >&2
   return 1
 fi
 
@@ -14,7 +14,7 @@ source "${REPO_ROOT}/.env.azure.generated"
 set +a
 
 if [[ -z "${APIM_CLAUDE_BASE_URL:-}" ]]; then
-  printf 'ERROR: APIM endpoint is not present; run scripts/deploy-apim.sh.\n' >&2
+  printf 'ERROR: APIM endpoint is not present; run scripts/deploy.sh.\n' >&2
   return 1
 fi
 
