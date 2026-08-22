@@ -9,18 +9,33 @@ if [[ ! -f "${REPO_ROOT}/.env.azure.generated" ]]; then
   return 1
 fi
 
+_configured_tenant_id="$AZURE_TENANT_ID"
+_configured_subscription_id="$AZURE_SUBSCRIPTION_ID"
+unset AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID FOUNDRY_RESOURCE_GROUP
+unset APIM_RESOURCE_NAME APIM_SUBSCRIPTION_NAME APIM_CLAUDE_BASE_URL CLAUDE_DEPLOYMENT_NAME
 set -a
-source "${REPO_ROOT}/.env.azure.generated"
-set +a
-
-if [[ -z "${APIM_CLAUDE_BASE_URL:-}" ]]; then
-  printf 'ERROR: APIM endpoint is not present; run scripts/deploy.sh.\n' >&2
+if ! source "${REPO_ROOT}/.env.azure.generated"; then
+  set +a
+  printf 'ERROR: Generated Azure configuration is invalid; run scripts/deploy.sh again.\n' >&2
   return 1
 fi
+set +a
 
-key_url="https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.ApiManagement/service/${APIM_RESOURCE_NAME}/subscriptions/${APIM_SUBSCRIPTION_NAME}/listSecrets?api-version=2024-05-01"
-_apim_key="$(az rest --method post --url "$key_url" --query primaryKey --output tsv)"
-unset key_url
+for _name in AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID FOUNDRY_RESOURCE_GROUP \
+  APIM_RESOURCE_NAME APIM_SUBSCRIPTION_NAME APIM_CLAUDE_BASE_URL CLAUDE_DEPLOYMENT_NAME; do
+  if [[ -z "${!_name:-}" ]]; then
+    printf 'ERROR: Generated Azure configuration is missing %s; run scripts/deploy.sh again.\n' "$_name" >&2
+    return 1
+  fi
+done
+if [[ "$AZURE_TENANT_ID" != "$_configured_tenant_id" ||
+      "$AZURE_SUBSCRIPTION_ID" != "$_configured_subscription_id" ]]; then
+  printf 'ERROR: Generated Azure configuration is stale; run scripts/deploy.sh again.\n' >&2
+  return 1
+fi
+if ! _apim_key="$(get_apim_subscription_key)"; then
+  return 1
+fi
 
 export PATH="$HOME/.local/bin:$PATH"
 export CLAUDE_CODE_USE_FOUNDRY=1
@@ -40,4 +55,4 @@ printf '  Deployment: %s\n' "$CLAUDE_DEPLOYMENT_NAME"
 printf '  Client auth: Ocp-Apim-Subscription-Key\n'
 printf '  Backend auth: APIM system-assigned managed identity\n'
 
-unset _apim_key _script_dir
+unset _apim_key _configured_tenant_id _configured_subscription_id _name _script_dir

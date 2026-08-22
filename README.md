@@ -1,6 +1,6 @@
-# Claude Code on Azure with Microsoft Foundry
+# Claude Desktop and Claude Code on Azure with Microsoft Foundry
 
-Run local Claude Code through Azure API Management (APIM) and Microsoft Foundry while preserving the native Anthropic Messages API.
+Run Claude Desktop or terminal Claude Code through Azure API Management (APIM) and Microsoft Foundry while preserving the native Anthropic Messages API.
 
 ![Claude Code on Azure architecture](docs/claude-arch.png)
 
@@ -25,7 +25,7 @@ Greenfield defaults to Sonnet at 25K TPM. The preflight checks the live regional
 
 ## Quickstart
 
-Prerequisites: Azure CLI, `jq`, Git, Bash/Zsh, and current Claude Code (`2.1.203+`).
+Prerequisites: Azure CLI, `jq`, Git, Bash/Zsh, and current Claude Code (`2.1.203+`). Claude Desktop setup additionally requires macOS 14+ and Claude Desktop `1.21459.0+`.
 
 ```bash
 git clone https://github.com/msftnadavbh/claudecodepoc.git
@@ -38,10 +38,13 @@ cp .env.azure.example .env.azure.local
 ./scripts/preflight-model.sh
 ./scripts/validate-infra.sh --gateway
 ./scripts/deploy.sh
+
+# Choose either or both:
 ./scripts/configure-claude.sh
+./scripts/configure-claude-desktop.sh
 ```
 
-Restart the shell, or source the profile printed by the setup script, then run:
+For terminal Claude Code, restart the shell or source the shell profile printed by the setup script, then run:
 
 ```bash
 claude
@@ -53,7 +56,7 @@ For one-off use without changing the shell profile:
 ./scripts/claude-apim.sh
 ```
 
-## Automatic Claude Code Setup
+## Terminal Claude Code Setup
 
 `./scripts/configure-claude.sh` makes plain `claude` use Foundry through APIM automatically:
 
@@ -64,6 +67,40 @@ For one-off use without changing the shell profile:
 5. Sets Foundry mode, the APIM base URL, skipped local Foundry auth, the APIM key header, and model deployment aliases.
 
 Result: after one shell reload, users run normal `claude`; all model traffic goes Claude Code → APIM → Foundry.
+
+## Claude Desktop Setup
+
+`./scripts/configure-claude-desktop.sh` configures Claude Desktop third-party gateway mode for Chat, Cowork, and Code:
+
+1. Validates the macOS installation and the current Claude Desktop version.
+2. Refreshes the repository's non-secret `.env.azure.generated` through the existing Azure context checks.
+3. Generates and validates an ignored `.claude-runtime/claude-desktop/claudecodepoc-claude-desktop.mobileconfig`.
+4. Opens the profile with the supported macOS UI. Approve it in **System Settings → General → Device Management**; macOS does not permit the script to bypass this approval.
+5. When run interactively, waits for approval, verifies the managed preference, then fully quits and reopens Claude Desktop.
+
+The profile selects the APIM gateway, disables model discovery, and configures the exact Foundry deployment. `GET /v1/models` is not required. It contains no APIM key, Foundry key, or Azure token. Claude Desktop runs `scripts/claude-desktop-credential-helper.sh` when it needs a credential; the helper validates the repository-local Azure CLI context and fetches the APIM subscription key into memory at runtime.
+
+The helper contains an absolute path to this clone. Keep the repository at that path and keep the existing repository-local Azure CLI login valid. If the clone moves, rerun `./scripts/configure-claude-desktop.sh` and approve the replacement profile. Check the generated and installed configuration without fetching a key:
+
+```bash
+./scripts/configure-claude-desktop.sh --check
+```
+
+The generated profile uses a stable identifier, so repeated setup runs replace the same profile. To remove it, use **System Settings → General → Device Management**; the script never removes a profile automatically.
+
+MCP tool search starts disabled. First prove the same APIM → Foundry route with an end-to-end Claude Code run:
+
+```bash
+ENABLE_TOOL_SEARCH=true ./scripts/run-claude-code-smoke.sh
+```
+
+Only after that succeeds, opt in while regenerating the Desktop profile:
+
+```bash
+ENABLE_TOOL_SEARCH=true ./scripts/configure-claude-desktop.sh
+```
+
+No MCP server is installed or configured by this repository.
 
 ## Greenfield Configuration
 
@@ -91,11 +128,12 @@ brew install --cask claude-code
 brew install azure-cli jq
 ```
 
-Then follow the Quickstart. `scripts/configure-claude.sh` detects Zsh and updates `~/.zshrc`. Homebrew Claude Code does not auto-update; use `brew upgrade --cask claude-code`.
+Install Claude Desktop from [claude.com/download](https://claude.com/download), then follow the Quickstart. `scripts/configure-claude.sh` detects Zsh and updates `~/.zshrc`. Homebrew Claude Code does not auto-update; use `brew upgrade --cask claude-code`.
 
 ## How Authentication Works
 
-- Claude Code fetches an APIM subscription key at launch and keeps it only in the process environment.
+- Terminal Claude Code fetches an APIM subscription key at launch and keeps it only in the process environment.
+- Claude Desktop fetches the same key through its credential helper and caches the in-memory result for one hour.
 - APIM strips client credentials and authenticates to Foundry with its system-assigned managed identity.
 - APIM receives `Cognitive Services User` at the Foundry account scope.
 - Requests stay in native Anthropic Messages format, including SSE and token counting.
@@ -112,8 +150,13 @@ Then follow the Quickstart. `scripts/configure-claude.sh` detects Zsh and update
 
 Local identifiers, Azure CLI state, generated environment files, deployment evidence, and Claude state are gitignored.
 
+For a production fleet, replace the shared APIM subscription-key mechanism with Claude Desktop interactive Microsoft Entra sign-in. APIM must strictly validate the JWT issuer and audience and authorize each user individually; production OIDC is intentionally outside this proof-of-concept change.
+
 ## Sources And Terms
 
+- [Anthropic: Claude Desktop through an LLM gateway](https://claude.com/docs/third-party/claude-desktop/gateway)
+- [Anthropic: Claude Desktop configuration reference](https://claude.com/docs/third-party/claude-desktop/configuration)
+- [Anthropic: Claude Desktop on Microsoft Foundry](https://claude.com/docs/third-party/claude-desktop/foundry)
 - [Anthropic: Claude Code on Microsoft Foundry](https://code.claude.com/docs/en/microsoft-foundry)
 - [Anthropic: connect Claude Code to an LLM gateway](https://code.claude.com/docs/en/llm-gateway-connect)
 - [Microsoft Learn: deploy Claude with Bicep or Terraform](https://learn.microsoft.com/azure/developer/ai/how-to/deploy-claude-foundry)
