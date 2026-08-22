@@ -111,4 +111,20 @@ case ":${PATH}:" in
   *) export PATH="${REPO_ROOT}/scripts:${PATH}" ;;
 esac
 
+get_apim_subscription_key() {
+  local key_url apim_key
+
+  key_url="https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/resourceGroups/${FOUNDRY_RESOURCE_GROUP}/providers/Microsoft.ApiManagement/service/${APIM_RESOURCE_NAME}/subscriptions/${APIM_SUBSCRIPTION_NAME}/listSecrets?api-version=2024-05-01"
+  if ! apim_key="$(az rest --method post --url "$key_url" --query primaryKey --output tsv 2>/dev/null)"; then
+    printf 'ERROR: Unable to retrieve the APIM subscription key.\n' >&2
+    return 1
+  fi
+  if [[ -z "$apim_key" || "$apim_key" == 'null' || "$apim_key" == *$'\n'* ]]; then
+    printf 'ERROR: Azure returned an invalid APIM subscription key.\n' >&2
+    return 1
+  fi
+
+  printf '%s' "$apim_key"
+}
+
 unset required name uuid default_model
