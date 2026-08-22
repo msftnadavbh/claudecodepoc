@@ -2,6 +2,8 @@
 set +x
 set -euo pipefail
 
+export PATH="${PATH:-/usr/bin:/bin}:/opt/homebrew/bin:/usr/local/bin"
+
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 GENERATED_ENV="${REPO_ROOT}/.env.azure.generated"

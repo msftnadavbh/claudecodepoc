@@ -13,6 +13,7 @@ trap cleanup EXIT
 mkdir -p "${temp_dir}/repo"
 REPO_ROOT="$(cd -- "${temp_dir}/repo" && pwd)"
 cp -R "${SOURCE_ROOT}/scripts" "${REPO_ROOT}/scripts"
+cp -R "${SOURCE_ROOT}/demo-repo" "${REPO_ROOT}/demo-repo"
 
 sed \
   -e 's/^AZURE_TENANT_ID=.*/AZURE_TENANT_ID=22222222-2222-2222-2222-222222222222/' \
@@ -45,6 +46,7 @@ managed_user="${USER:-$(id -un)}"
 machine_preferences="${managed_preferences_dir}/com.anthropic.claudefordesktop.plist"
 user_preferences="${managed_preferences_dir}/${managed_user}/com.anthropic.claudefordesktop.plist"
 mock_az_log="${temp_dir}/az.log"
+mock_az_path_log="${temp_dir}/az-path.log"
 mock_open_log="${temp_dir}/open.log"
 mock_key='mock-apim-subscription-key-not-secret'
 mock_access_token='mock-azure-access-token-not-secret'
@@ -57,6 +59,7 @@ cat > "${fake_bin}/az" <<'EOF'
 set -euo pipefail
 
 printf '%s\n' "$*" >> "$MOCK_AZ_LOG"
+printf '%s\n' "$PATH" > "$MOCK_AZ_PATH_LOG"
 if [[ "${MOCK_AZ_FORBID:-false}" == 'true' ]]; then
   printf 'ERROR: Azure CLI was invoked unexpectedly.\n' >&2
   exit 90
@@ -100,6 +103,7 @@ export AZURE_CLI_NATIVE="${fake_bin}/az"
 export CLAUDE_DESKTOP_APP_PATH="$fake_app"
 export CLAUDE_DESKTOP_STATE_DIR="$state_dir"
 export MOCK_AZ_LOG="$mock_az_log"
+export MOCK_AZ_PATH_LOG="$mock_az_path_log"
 export MOCK_OPEN_LOG="$mock_open_log"
 export MOCK_TENANT_ID='22222222-2222-2222-2222-222222222222'
 export MOCK_SUBSCRIPTION_ID='11111111-1111-1111-1111-111111111111'
@@ -146,8 +150,12 @@ jq -e \
 ! grep -Fq "$mock_access_token" "$profile"
 
 helper_stderr="${temp_dir}/helper.err"
-helper_output="$("$helper" 2>"$helper_stderr")"
+: > "$mock_az_path_log"
+helper_output="$(PATH='/usr/bin:/bin' "$helper" 2>"$helper_stderr")"
 [[ ! -s "$helper_stderr" ]]
+helper_runtime_path="$(cat "$mock_az_path_log")"
+[[ ":${helper_runtime_path}:" == *':/opt/homebrew/bin:'* ]]
+[[ ":${helper_runtime_path}:" == *':/usr/local/bin:'* ]]
 jq -e -s --arg key "$mock_key" '
   length == 1
   and .[0] == {
@@ -191,5 +199,51 @@ CLAUDE_DESKTOP_MANAGED_PREFERENCES_DIR="$managed_preferences_dir" \
   MOCK_AZ_FORBID=true \
   "${REPO_ROOT}/scripts/configure-claude-desktop.sh" --check >"${temp_dir}/check.out"
 [[ ! -s "$mock_az_log" ]]
+
+mock_claude_args="${temp_dir}/claude.args"
+mock_python_count="${temp_dir}/python.count"
+smoke_tmp="${temp_dir}/smoke"
+mkdir -p "$smoke_tmp"
+
+cat > "${fake_bin}/claude" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+printf '%s\n' "$*" > "$MOCK_CLAUDE_ARGS"
+if [[ "${ENABLE_TOOL_SEARCH:-}" != 'true' ]]; then
+  printf 'ERROR: Tool search was not exported to Claude Code.\n' >&2
+  exit 1
+fi
+printf '%s\n' \
+  '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"ToolSearch","input":{"query":"repository inspection"}}]}}' \
+  '{"type":"result","result":"Mock tool-search smoke completed."}'
+EOF
+
+cat > "${fake_bin}/python3" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+count=0
+if [[ -f "$MOCK_PYTHON_COUNT" ]]; then
+  count="$(cat "$MOCK_PYTHON_COUNT")"
+fi
+count=$((count + 1))
+printf '%s\n' "$count" > "$MOCK_PYTHON_COUNT"
+if [[ "$count" -eq 1 ]]; then
+  exit 1
+fi
+EOF
+
+chmod +x "${fake_bin}/claude" "${fake_bin}/python3"
+export MOCK_CLAUDE_ARGS="$mock_claude_args"
+export MOCK_PYTHON_COUNT="$mock_python_count"
+
+ENABLE_TOOL_SEARCH=true TMPDIR="$smoke_tmp" \
+  "${REPO_ROOT}/scripts/run-claude-code-smoke.sh" >"${temp_dir}/smoke.out"
+grep -Fq -- '--tools Read,Edit,Bash,ToolSearch' "$mock_claude_args"
+grep -Fq -- '--allowed-tools Read,Edit,Bash(python3 -m unittest discover -s tests -v),ToolSearch' \
+  "$mock_claude_args"
+grep -Fq -- '--output-format stream-json' "$mock_claude_args"
+grep -Fq 'Mock tool-search smoke completed.' "${temp_dir}/smoke.out"
 
 printf 'Configuration tests passed.\n'

@@ -94,7 +94,7 @@ MCP tool search starts disabled. First prove the same APIM → Foundry route wit
 ENABLE_TOOL_SEARCH=true ./scripts/run-claude-code-smoke.sh
 ```
 
-Only after that succeeds, opt in while regenerating the Desktop profile:
+This opt-in smoke run exposes `ToolSearch` to Claude Code and fails unless the session produces an actual `ToolSearch` tool-use event. Hosted-on-Azure Foundry deployments currently reject tool search server-side, so keep it disabled unless that end-to-end check succeeds after a future platform update. Only then opt in while regenerating the Desktop profile:
 
 ```bash
 ENABLE_TOOL_SEARCH=true ./scripts/configure-claude-desktop.sh
